@@ -16,6 +16,12 @@ const canvas = document.getElementById('spriteCanvas');
 const ctx = canvas.getContext('2d');
 const clearCanvasBtn = document.getElementById('clearCanvas');
 const exportBtn = document.getElementById('exportSpritesheet');
+const importBtn = document.getElementById('importSpritesheet');
+const importFileInput = document.createElement('input');
+importFileInput.type = 'file';
+importFileInput.accept = 'image/*';
+importFileInput.style.display = 'none';
+document.body.appendChild(importFileInput);
 const zoomInBtn = document.getElementById('zoomIn');
 const zoomOutBtn = document.getElementById('zoomOut');
 const zoomResetBtn = document.getElementById('zoomReset');
@@ -150,10 +156,14 @@ function drawGrid() {
             width = height * aspectRatio;
         }
         
+        // Adjust position to account for zoom and pan
+        const adjustedX = dragStartX;
+        const adjustedY = dragStartY;
+        
         ctx.drawImage(
             draggedImage,
-            dragStartX - width / 2,
-            dragStartY - height / 2,
+            adjustedX - width / 2,
+            adjustedY - height / 2,
             width,
             height
         );
@@ -373,6 +383,80 @@ function exportSpritesheet() {
     link.click();
 }
 
+function importSpritesheet(file) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const img = new Image();
+        img.src = e.target.result;
+        
+        img.onload = function() {
+            // Calculate how many sprites we can extract based on current grid settings
+            const spriteWidth = cellWidth;
+            const spriteHeight = cellHeight;
+            const spritePadding = padding;
+            
+            // Create a temporary canvas to process the image
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = spriteWidth;
+            tempCanvas.height = spriteHeight;
+            
+            // Clear the grid before importing
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < columns; col++) {
+                    grid[row][col] = null;
+                }
+            }
+            
+            // Extract each sprite from the spritesheet
+            let spriteCount = 0;
+            for (let row = 0; row < rows && row * (spriteHeight + spritePadding) < img.height; row++) {
+                for (let col = 0; col < columns && col * (spriteWidth + spritePadding) < img.width; col++) {
+                    // Calculate the position of this sprite in the original spritesheet
+                    const srcX = col * (spriteWidth + spritePadding) + spritePadding;
+                    const srcY = row * (spriteHeight + spritePadding) + spritePadding;
+                    
+                    // Skip if we're out of bounds
+                    if (srcX + spriteWidth > img.width || srcY + spriteHeight > img.height) {
+                        continue;
+                    }
+                    
+                    // Clear the temp canvas
+                    tempCtx.clearRect(0, 0, spriteWidth, spriteHeight);
+                    
+                    // Draw the sprite to the temp canvas
+                    tempCtx.drawImage(
+                        img,
+                        srcX, srcY, spriteWidth, spriteHeight,
+                        0, 0, spriteWidth, spriteHeight
+                    );
+                    
+                    // Create a new image from the sprite
+                    const spriteImg = new Image();
+                    spriteImg.src = tempCanvas.toDataURL();
+                    
+                    // Add the sprite to our collection and place it in the grid
+                    spriteImg.onload = function() {
+                        uploadedImages.push(spriteImg);
+                        createThumbnail(spriteImg, uploadedImages.length - 1);
+                        grid[row][col] = spriteImg;
+                        drawGrid();
+                    };
+                    
+                    spriteCount++;
+                }
+            }
+            
+            if (spriteCount === 0) {
+                alert('No sprites could be extracted with the current grid settings. Try adjusting the rows, columns, cell size, or padding.');
+            }
+        };
+    };
+    
+    reader.readAsDataURL(file);
+}
+
 function startPanning(e) {
     isPanning = true;
     panStartX = e.clientX - panOffsetX;
@@ -490,8 +574,9 @@ canvas.addEventListener('mousemove', function(e) {
     }
     
     if (isDragging) {
-        dragStartX = (e.clientX - rect.left) / zoomLevel - panOffsetX / zoomLevel;
-        dragStartY = (e.clientY - rect.top) / zoomLevel - panOffsetY / zoomLevel;
+        // Update drag position to be directly at cursor position, accounting for zoom and pan
+        dragStartX = (e.clientX - rect.left) / zoomLevel;
+        dragStartY = (e.clientY - rect.top) / zoomLevel;
         drawGrid();
     }
 });
@@ -522,8 +607,8 @@ canvas.addEventListener('mousedown', function(e) {
         } else {
             isDragging = true;
             draggedImage = selectedImages[0];
-            dragStartX = (x / zoomLevel) - (panOffsetX / zoomLevel);
-            dragStartY = (y / zoomLevel) - (panOffsetY / zoomLevel);
+            dragStartX = (x / zoomLevel);
+            dragStartY = (y / zoomLevel);
         }
     } else {
         const cell = getCellFromCoords(x, y);
@@ -531,8 +616,8 @@ canvas.addEventListener('mousedown', function(e) {
             isDragging = true;
             draggedImage = grid[cell.row][cell.col];
             grid[cell.row][cell.col] = null;
-            dragStartX = (x / zoomLevel) - (panOffsetX / zoomLevel);
-            dragStartY = (y / zoomLevel) - (panOffsetY / zoomLevel);
+            dragStartX = (x / zoomLevel);
+            dragStartY = (y / zoomLevel);
             drawGrid();
         }
     }
@@ -589,6 +674,18 @@ clearCanvasBtn.addEventListener('click', function() {
 });
 
 exportBtn.addEventListener('click', exportSpritesheet);
+
+importBtn.addEventListener('click', function() {
+    importFileInput.click();
+});
+
+importFileInput.addEventListener('change', function() {
+    if (this.files.length > 0) {
+        importSpritesheet(this.files[0]);
+    }
+    // Reset the input so the same file can be selected again
+    this.value = '';
+});
 
 zoomInBtn.addEventListener('click', function() {
     zoomLevel = Math.min(zoomLevel * 1.2, 5);
