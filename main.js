@@ -26,6 +26,7 @@ const zoomInBtn = document.getElementById('zoomIn');
 const zoomOutBtn = document.getElementById('zoomOut');
 const zoomResetBtn = document.getElementById('zoomReset');
 const canvasContainer = document.querySelector('.canvas-container');
+const donateBtn = document.getElementById('donateBtn');
 
 let rows = 4;
 let columns = 4;
@@ -477,6 +478,21 @@ function stopPanning() {
     canvas.style.cursor = 'default';
 }
 
+function donateWithPaypal() {
+    // Get the donation amount from the input field
+    const donationAmount = document.getElementById('donationAmount').value;
+    
+    // Validate the amount
+    const amount = parseFloat(donationAmount);
+    if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid donation amount.');
+        return;
+    }
+    
+    // Open PayPal with the specified amount
+    window.open(`https://www.paypal.com/donate/?business=U2K8REXZE7YJU&no_recurring=0&item_name=Support+the+creator%21&currency_code=USD&amount=${amount}`, '_blank');
+}
+
 applySettingsBtn.addEventListener('click', initGrid);
 
 document.addEventListener('contextmenu', event => event.preventDefault());
@@ -702,6 +718,10 @@ zoomResetBtn.addEventListener('click', function() {
     panOffsetY = 0;
     fitCanvasToContainer();
 });
+
+if (donateBtn) {
+    donateBtn.addEventListener('click', donateWithPaypal);
+}
 
 window.addEventListener('resize', fitCanvasToContainer);
 
