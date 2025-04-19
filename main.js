@@ -16,6 +16,7 @@ const canvas = document.getElementById('spriteCanvas');
 const ctx = canvas.getContext('2d');
 const clearCanvasBtn = document.getElementById('clearCanvas');
 const exportBtn = document.getElementById('exportSpritesheet');
+const exportJsonBtn = document.getElementById('exportJson');
 const importBtn = document.getElementById('importSpritesheet');
 const importFileInput = document.createElement('input');
 importFileInput.type = 'file';
@@ -27,6 +28,7 @@ const zoomOutBtn = document.getElementById('zoomOut');
 const zoomResetBtn = document.getElementById('zoomReset');
 const canvasContainer = document.querySelector('.canvas-container');
 const donateBtn = document.getElementById('donateBtn');
+const exportTypeInput = document.getElementById('exportType');
 
 let rows = 4;
 let columns = 4;
@@ -49,6 +51,12 @@ let panOffsetX = 0;
 let panOffsetY = 0;
 let panStartX = 0;
 let panStartY = 0;
+let isMultiSelecting = false;
+let selectionStartCell = null;
+let selectionEndCell = null;
+let isErasing = false;
+let imageIdCounter = 1; // Counter for assigning unique IDs to images
+let imageIdMap = {}; // Map to store image IDs and their names
 
 function initGrid() {
     rows = parseInt(rowsInput.value);
@@ -133,6 +141,23 @@ function drawGrid() {
                 ctx.strokeStyle = 'rgba(74, 107, 175, 0.8)';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(x, y, cellWidth, cellHeight);
+            } else if (isMultiSelecting && isInSelectionArea(row, col)) {
+                // Highlight cells in the selection area
+                if (isErasing) {
+                    ctx.fillStyle = 'rgba(255, 75, 75, 0.3)'; // Red highlight for erasing
+                } else {
+                    ctx.fillStyle = 'rgba(74, 107, 175, 0.3)'; // Blue highlight for placing
+                }
+                ctx.fillRect(x, y, cellWidth, cellHeight);
+                
+                // Draw a border around the selected cell
+                if (isErasing) {
+                    ctx.strokeStyle = 'rgba(255, 75, 75, 0.8)';
+                } else {
+                    ctx.strokeStyle = 'rgba(74, 107, 175, 0.8)';
+                }
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, cellWidth, cellHeight);
             } else {
                 ctx.fillStyle = 'rgba(68, 68, 68, 0.5)';
                 ctx.fillRect(x, y, cellWidth, cellHeight);
@@ -172,6 +197,17 @@ function drawGrid() {
     }
 }
 
+function isInSelectionArea(row, col) {
+    if (!selectionStartCell || !selectionEndCell) return false;
+    
+    const minRow = Math.min(selectionStartCell.row, selectionEndCell.row);
+    const maxRow = Math.max(selectionStartCell.row, selectionEndCell.row);
+    const minCol = Math.min(selectionStartCell.col, selectionEndCell.col);
+    const maxCol = Math.max(selectionStartCell.col, selectionEndCell.col);
+    
+    return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+}
+
 function drawImageInCell(img, row, col) {
     const x = padding + col * (cellWidth + padding);
     const y = padding + row * (cellHeight + padding);
@@ -202,6 +238,12 @@ function handleFiles(files) {
                 img.src = e.target.result;
                 
                 img.onload = function() {
+                    // Assign a unique ID to the image
+                    img.id = imageIdCounter;
+                    // Store the image name in the map
+                    imageIdMap[imageIdCounter] = file.name || `image_${imageIdCounter}`;
+                    imageIdCounter++;
+                    
                     uploadedImages.push(img);
                     createThumbnail(img, uploadedImages.length - 1);
                 };
@@ -233,24 +275,13 @@ function createThumbnail(img, index) {
     thumbnail.appendChild(removeBtn);
     
     thumbnail.addEventListener('click', function(e) {
-        if (multiSelectCheckbox.checked) {
-            const imgIndex = selectedImages.indexOf(img);
-            if (imgIndex === -1) {
-                selectedImages.push(img);
-                thumbnail.classList.add('selected');
-            } else {
-                selectedImages.splice(imgIndex, 1);
-                thumbnail.classList.remove('selected');
-            }
-        } else {
-            selectedImages = [img];
-            draggedImage = img;
-            
-            document.querySelectorAll('.thumbnail').forEach(thumb => {
-                thumb.classList.remove('selected');
-            });
-            thumbnail.classList.add('selected');
-        }
+        selectedImages = [img];
+        draggedImage = img;
+        
+        document.querySelectorAll('.thumbnail').forEach(thumb => {
+            thumb.classList.remove('selected');
+        });
+        thumbnail.classList.add('selected');
     });
     
     thumbnailsContainer.appendChild(thumbnail);
@@ -338,6 +369,42 @@ function placeImagesInSequence(startRow, startCol) {
     drawGrid();
 }
 
+function placeImagesInArea() {
+    if (!selectionStartCell || !selectionEndCell || selectedImages.length === 0) return;
+    
+    const minRow = Math.min(selectionStartCell.row, selectionEndCell.row);
+    const maxRow = Math.max(selectionStartCell.row, selectionEndCell.row);
+    const minCol = Math.min(selectionStartCell.col, selectionEndCell.col);
+    const maxCol = Math.max(selectionStartCell.col, selectionEndCell.col);
+    
+    if (isErasing) {
+        // Erase images in the selection area
+        for (let row = minRow; row <= maxRow; row++) {
+            for (let col = minCol; col <= maxCol; col++) {
+                grid[row][col] = null;
+            }
+        }
+    } else {
+        // Place images in the selection area
+        const selectedImage = selectedImages[0];
+        for (let row = minRow; row <= maxRow; row++) {
+            for (let col = minCol; col <= maxCol; col++) {
+                grid[row][col] = selectedImage;
+            }
+        }
+    }
+    
+    drawGrid();
+}
+
+function exportType() {
+    if (exportTypeInput.value === 'image') {
+        exportSpritesheet();
+    } else if (exportTypeInput.value === 'json') {
+        exportJson();
+    }
+}
+
 function exportSpritesheet() {
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d');
@@ -382,6 +449,60 @@ function exportSpritesheet() {
     link.download = 'spritesheet.png';
     link.href = tempCanvas.toDataURL('image/png');
     link.click();
+}
+
+function exportJson() {
+    // Create the JSON structure
+    const jsonData = {
+        key: {},
+        grid: []
+    };
+    
+    // Add the key mapping IDs to image names
+    for (const id in imageIdMap) {
+        jsonData.key[id] = imageIdMap[id];
+    }
+    
+    // Create the grid data
+    for (let row = 0; row < rows; row++) {
+        const rowArray = [];
+        for (let col = 0; col < columns; col++) {
+            if (grid[row][col]) {
+                rowArray.push(grid[row][col].id);
+            } else {
+                rowArray.push(0); // 0 for empty space
+            }
+        }
+        jsonData.grid.push(rowArray);
+    }
+    
+    // Format the JSON with row labels
+    let formattedJson = "{\n  \"key\": {\n";
+    
+    // Add the key section
+    const keyEntries = Object.entries(jsonData.key);
+    for (let i = 0; i < keyEntries.length; i++) {
+        const [id, name] = keyEntries[i];
+        formattedJson += `    "${id}": "${name}"${i < keyEntries.length - 1 ? ',' : ''}\n`;
+    }
+    
+    formattedJson += "  },\n  \"grid\": {\n";
+    
+    // Add the grid section with row labels
+    for (let i = 0; i < jsonData.grid.length; i++) {
+        formattedJson += `    "row_${i + 1}": [${jsonData.grid[i].join(', ')}]${i < jsonData.grid.length - 1 ? ',' : ''}\n`;
+    }
+    
+    formattedJson += "  }\n}";
+    
+    // Create a blob and download the JSON file
+    const blob = new Blob([formattedJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = 'spritesheet_data.json';
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
 }
 
 function importSpritesheet(file) {
@@ -439,6 +560,12 @@ function importSpritesheet(file) {
                     
                     // Add the sprite to our collection and place it in the grid
                     spriteImg.onload = function() {
+                        // Assign a unique ID to the image
+                        spriteImg.id = imageIdCounter;
+                        // Store the image name in the map
+                        imageIdMap[imageIdCounter] = `sprite_${imageIdCounter}`;
+                        imageIdCounter++;
+                        
                         uploadedImages.push(spriteImg);
                         createThumbnail(spriteImg, uploadedImages.length - 1);
                         grid[row][col] = spriteImg;
@@ -544,24 +671,6 @@ transparentBgCheckbox.addEventListener('change', function() {
     drawGrid();
 });
 
-multiSelectCheckbox.addEventListener('change', function() {
-    if (!this.checked) {
-        if (selectedImages.length > 1) {
-            const firstImage = selectedImages[0];
-            selectedImages = [firstImage];
-            draggedImage = firstImage;
-            
-            document.querySelectorAll('.thumbnail').forEach((thumb, index) => {
-                if (uploadedImages[index] === firstImage) {
-                    thumb.classList.add('selected');
-                } else {
-                    thumb.classList.remove('selected');
-                }
-            });
-        }
-    }
-});
-
 // Prevent context menu on canvas
 canvas.addEventListener('contextmenu', function(e) {
     e.preventDefault();
@@ -580,6 +689,12 @@ canvas.addEventListener('mousemove', function(e) {
     
     // Get cell coordinates accounting for zoom and pan
     const cell = getCellFromCoords(x, y);
+    
+    if (isMultiSelecting && cell) {
+        selectionEndCell = cell;
+        drawGrid();
+        return;
+    }
     
     // Only redraw if the hovered cell has changed
     if ((cell && !hoveredCell) || 
@@ -614,34 +729,47 @@ canvas.addEventListener('mousedown', function(e) {
         return;
     }
     
-    if (selectedImages.length > 0) {
-        if (multiSelectCheckbox.checked) {
-            const cell = getCellFromCoords(x, y);
-            if (cell) {
-                placeImagesInSequence(cell.row, cell.col);
-            }
-        } else {
-            isDragging = true;
-            draggedImage = selectedImages[0];
-            dragStartX = (x / zoomLevel);
-            dragStartY = (y / zoomLevel);
-        }
-    } else {
-        const cell = getCellFromCoords(x, y);
-        if (cell && grid[cell.row][cell.col]) {
-            isDragging = true;
-            draggedImage = grid[cell.row][cell.col];
-            grid[cell.row][cell.col] = null;
-            dragStartX = (x / zoomLevel);
-            dragStartY = (y / zoomLevel);
-            drawGrid();
-        }
+    const cell = getCellFromCoords(x, y);
+    if (!cell) return;
+    
+    // Check if Ctrl key is pressed for erasing mode
+    isErasing = e.ctrlKey;
+    
+    if (e.button === 0 && selectedImages.length > 0 && !isErasing) {
+        // Start multi-selection for placing images
+        isMultiSelecting = true;
+        selectionStartCell = cell;
+        selectionEndCell = cell;
+        drawGrid();
+    } else if (e.button === 0 && isErasing) {
+        // Start multi-selection for erasing
+        isMultiSelecting = true;
+        selectionStartCell = cell;
+        selectionEndCell = cell;
+        drawGrid();
+    } else if (e.button === 0 && cell && grid[cell.row][cell.col]) {
+        // Start dragging an existing image
+        isDragging = true;
+        draggedImage = grid[cell.row][cell.col];
+        grid[cell.row][cell.col] = null;
+        dragStartX = (x / zoomLevel);
+        dragStartY = (y / zoomLevel);
+        drawGrid();
     }
 });
 
 canvas.addEventListener('mouseup', function(e) {
     if (isPanning) {
         stopPanning();
+        return;
+    }
+    
+    if (isMultiSelecting) {
+        placeImagesInArea();
+        isMultiSelecting = false;
+        selectionStartCell = null;
+        selectionEndCell = null;
+        drawGrid();
         return;
     }
     
@@ -667,6 +795,14 @@ document.addEventListener('mouseup', function() {
         stopPanning();
     }
     
+    if (isMultiSelecting) {
+        placeImagesInArea();
+        isMultiSelecting = false;
+        selectionStartCell = null;
+        selectionEndCell = null;
+        drawGrid();
+    }
+    
     if (isDragging) {
         isDragging = false;
         draggedImage = null;
@@ -689,7 +825,11 @@ clearCanvasBtn.addEventListener('click', function() {
     drawGrid();
 });
 
-exportBtn.addEventListener('click', exportSpritesheet);
+exportBtn.addEventListener('click', exportType);
+
+if (exportJsonBtn) {
+    exportJsonBtn.addEventListener('click', exportJson);
+}
 
 importBtn.addEventListener('click', function() {
     importFileInput.click();
