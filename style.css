@@ -227,3 +227,9 @@ button:hover {
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.5);
 }
+
+/* Ensure grid cells have 0 padding and margin by default */
+td, th, table cell {
+    padding: 0;
+    margin: 0;
+}

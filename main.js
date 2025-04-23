@@ -213,11 +213,15 @@ function drawImageInCell(img, row, col) {
     const y = padding + row * (cellHeight + padding);
     
     const aspectRatio = img.width / img.height;
-    let width = cellWidth * 0.9;
-    let height = width / aspectRatio;
+    let width = cellWidth;
+    let height = cellHeight;
     
-    if (height > cellHeight * 0.9) {
-        height = cellHeight * 0.9;
+    // Maintain aspect ratio while filling the cell
+    if (aspectRatio > 1) {
+        // Wider than tall
+        height = width / aspectRatio;
+    } else {
+        // Taller than wide
         width = height * aspectRatio;
     }
     
@@ -429,11 +433,15 @@ function exportSpritesheet() {
             if (grid[row][col]) {
                 const img = grid[row][col];
                 const aspectRatio = img.width / img.height;
-                let width = cellWidth * 0.9;
-                let height = width / aspectRatio;
+                let width = cellWidth;
+                let height = cellHeight;
                 
-                if (height > cellHeight * 0.9) {
-                    height = cellHeight * 0.9;
+                // Maintain aspect ratio while filling the cell
+                if (aspectRatio > 1) {
+                    // Wider than tall
+                    height = width / aspectRatio;
+                } else {
+                    // Taller than wide
                     width = height * aspectRatio;
                 }
                 
